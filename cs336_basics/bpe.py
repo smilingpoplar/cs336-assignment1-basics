@@ -18,6 +18,7 @@ class BPE:
             self._vocab[len(self._vocab)] = st.encode("utf-8")
         self._pretokens: Counter[tuple[bytes, ...]] = Counter()
         self._merges: list[tuple[bytes, bytes]] = []
+        self._pair_count: Counter[tuple[bytes, bytes]] = Counter()
 
     def _pre_tokenize(self):
         with open(self._input_path, encoding="utf-8") as f:
@@ -28,29 +29,37 @@ class BPE:
             pt = tuple(pt[i : i + 1] for i in range(len(pt)))  # tuple[bytes, ...]
             self._pretokens[pt] += 1
 
-    def _merge_once(self):
-        pair_count: Counter[tuple[bytes, bytes]] = Counter()
         for pt in self._pretokens:
             # 统计所有相邻pair的出现频率
             for i in range(len(pt) - 1):
-                pair_count[(pt[i], pt[i + 1])] += self._pretokens[pt]
+                self._pair_count[(pt[i], pt[i + 1])] += self._pretokens[pt]
 
+    def _merge_once(self):
         # 把频率最高的pair合并成一个新符号
-        pair_most = max(pair_count, key=lambda k: (pair_count[k], k))
+        pair_most = max(self._pair_count, key=lambda k: (self._pair_count[k], k))
         self._merges.append(pair_most)
         bytes_merged = pair_most[0] + pair_most[1]
         self._vocab[len(self._vocab)] = bytes_merged
 
         # pretoken内部的合并
-        for pt in self._pretokens.copy():
+        for pt, cnt in self._pretokens.copy().items():
             pto = pt
+            n = len(pt)
             i = 0
-            while i < len(pt) - 1:
+            while i < n - 1:
                 if pt[i : i + 2] == pair_most:
+                    self._pair_count[(pt[i], pt[i + 1])] -= cnt
+                    if i > 0:
+                        self._pair_count[(pt[i - 1], pt[i])] -= cnt
+                        self._pair_count[(pt[i - 1], bytes_merged)] += cnt
+                    if i + 2 < n:
+                        self._pair_count[(pt[i + 1], pt[i + 2])] -= cnt
+                        self._pair_count[(bytes_merged, pt[i + 2])] += cnt
                     # 把所有该pair的出现都替换成新符号
                     pt = pt[:i] + (bytes_merged,) + pt[i + 2 :]
+                    n = len(pt)
                 i += 1
-            if pt != pto:
+            if n != len(pto):
                 self._pretokens[pt] = self._pretokens.pop(pto)
 
     def train(self) -> tuple[dict[int, bytes], list[tuple[bytes, bytes]]]:
