@@ -5,6 +5,7 @@ import os
 import resource
 import sys
 
+import numpy as np
 import psutil
 import pytest
 import tiktoken
@@ -462,3 +463,15 @@ def _encode(tokenizer, text):
     for just this function. We set the memory limit to 1MB.
     """
     return tokenizer.encode(text)
+
+
+@pytest.mark.manual
+def test_tokenizer_experiments():
+    from cs336_basics.tokenizer import Tokenizer
+
+    path_stem = "data/TinyStoriesV2-GPT4-train"
+    tokenizer = Tokenizer.from_files(f"{path_stem}-vocab.pkl", f"{path_stem}-merges.pkl", ["<|endoftext|>"])
+    with open(f"{path_stem}.txt") as f:
+        it = tokenizer.encode_iterable(f)
+        arr = np.fromiter(it, dtype=np.uint16)
+    np.save(f"{path_stem}.npy", arr)

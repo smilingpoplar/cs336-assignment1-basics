@@ -12,11 +12,11 @@ class Tokenizer:
         merges: list[tuple[bytes, bytes]],
         special_tokens: list[str] | None = None,
     ):
-        self.vocab = vocab
-        self.vocab_inv: dict[bytes, int] = {bs: id for id, bs in vocab.items()}
-        self.merges = merges
-        self.merge_to_rank: dict[tuple[bytes, bytes], int] = {m: i for i, m in enumerate(merges)}
-        self.special_tokens: set[str] = set(special_tokens or [])
+        self._vocab = vocab
+        self._vocab_inv: dict[bytes, int] = {bs: id for id, bs in vocab.items()}
+        self._merge_to_rank: dict[tuple[bytes, bytes], int] = {m: i for i, m in enumerate(merges)}
+        self._st_set: set[str] = set(special_tokens or [])
+        self._st_pattern = f"""({"|".join([re.escape(st) for st in sorted(self._st_set, key=len, reverse=True)])})"""
 
     @classmethod
     def from_files(
@@ -36,7 +36,7 @@ class Tokenizer:
         while True:
             if len(pt) <= 1:
                 break
-            rank_idx_list = [(self.merge_to_rank.get((pt[i], pt[i + 1]), inf), i) for i in range(len(pt) - 1)]
+            rank_idx_list = [(self._merge_to_rank.get((pt[i], pt[i + 1]), inf), i) for i in range(len(pt) - 1)]
             best_rank, idx = min(rank_idx_list)
             if best_rank == inf:
                 break
@@ -44,24 +44,18 @@ class Tokenizer:
         return pt
 
     def encode(self, text: str) -> list[int]:
-        if self.special_tokens:
-            st_pattern = "|".join([re.escape(st) for st in sorted(self.special_tokens, key=len, reverse=True)])
-            st_pattern = f"({st_pattern})"
-            chunks = re.split(st_pattern, text)
-        else:
-            chunks = [text]
-
         ids: list[int] = []
         PAT = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
+        chunks = re.split(self._st_pattern, text) if self._st_set else [text]
         for chunk in chunks:
-            if chunk in self.special_tokens:
-                ids.append(self.vocab_inv[chunk.encode("utf-8")])
+            if chunk in self._st_set:
+                ids.append(self._vocab_inv[chunk.encode("utf-8")])
             else:
                 for match in re.finditer(PAT, chunk):
                     pt = match.group().encode("utf-8")
                     pt = tuple(pt[i : i + 1] for i in range(len(pt)))  # tuple[bytes, ...]
                     pt = self._bpe(pt)
-                    ids += [self.vocab_inv[bs] for bs in pt]
+                    ids += [self._vocab_inv[bs] for bs in pt]
         return ids
 
     def encode_iterable(self, iterable: Iterable[str]) -> Iterator[int]:
@@ -69,4 +63,4 @@ class Tokenizer:
             yield from self.encode(line)
 
     def decode(self, ids: list[int]) -> str:
-        return b"".join([self.vocab[id] for id in ids]).decode("utf-8", errors="replace")
+        return b"".join([self._vocab[id] for id in ids]).decode("utf-8", errors="replace")
