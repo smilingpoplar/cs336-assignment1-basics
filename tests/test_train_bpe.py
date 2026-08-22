@@ -1,5 +1,8 @@
 import json
+import pickle
 import time
+
+import pytest
 
 from .adapters import run_train_bpe
 from .common import FIXTURES_PATH, gpt2_bytes_to_unicode
@@ -86,3 +89,21 @@ def test_train_bpe_special_tokens(snapshot):
             "merges": merges,
         },
     )
+
+
+@pytest.mark.manual
+def test_train_bpe_tinystories():
+    """
+    Ensure that the special tokens are added to the vocabulary and not
+    merged with other tokens.
+    """
+    path_stem = "data/TinyStoriesV2-GPT4-train"
+    vocab, merges = run_train_bpe(
+        input_path=f"{path_stem}.txt",
+        vocab_size=10000,
+        special_tokens=["<|endoftext|>"],
+    )
+    with open(f"{path_stem}-vocab.pkl", "wb") as f:
+        pickle.dump(vocab, f)
+    with open(f"{path_stem}-merges.pkl", "wb") as f:
+        pickle.dump(merges, f)
