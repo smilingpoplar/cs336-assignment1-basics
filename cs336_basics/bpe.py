@@ -13,6 +13,7 @@ class BPE:
     ):
         self._input_path = input_path
         self._vocab_size = vocab_size
+        self._special_tokens = special_tokens
         self._vocab: dict[int, bytes] = {c: bytes([c]) for c in range(256)}
         for st in special_tokens:
             self._vocab[len(self._vocab)] = st.encode("utf-8")
@@ -23,11 +24,13 @@ class BPE:
     def _pre_tokenize(self):
         with open(self._input_path, encoding="utf-8") as f:
             text = f.read()
+        st_pattern = "|".join([re.escape(st) for st in self._special_tokens])
         PAT = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
-        for match in re.finditer(PAT, text):
-            pt = match.group().encode("utf-8")
-            pt = tuple(pt[i : i + 1] for i in range(len(pt)))  # tuple[bytes, ...]
-            self._pretokens[pt] += 1
+        for chunk in re.split(st_pattern, text):
+            for match in re.finditer(PAT, chunk):
+                pt = match.group().encode("utf-8")
+                pt = tuple(pt[i : i + 1] for i in range(len(pt)))  # tuple[bytes, ...]
+                self._pretokens[pt] += 1
 
         for pt in self._pretokens:
             # 统计所有相邻pair的出现频率
