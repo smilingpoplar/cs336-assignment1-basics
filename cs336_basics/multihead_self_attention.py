@@ -1,10 +1,11 @@
 import torch
 import torch.nn as nn
 from einops import rearrange
-from jaxtyping import Float
+from jaxtyping import Float, Int
 
 from .linear import Linear
 from .nn_utils import scaled_dot_product_attention
+from .rotary_position_embedding import RotaryPositionEmbedding
 
 
 class MultiheadSelfAttention(nn.Module):
@@ -12,17 +13,27 @@ class MultiheadSelfAttention(nn.Module):
         self,
         d_model: int,
         num_heads: int,
+        rope: RotaryPositionEmbedding | None = None,
     ):
         super().__init__()
-        self.num_heads = num_heads
         self.q_proj = Linear(d_model, d_model)
         self.k_proj = Linear(d_model, d_model)
         self.v_proj = Linear(d_model, d_model)
         self.output_proj = Linear(d_model, d_model)
+        self.num_heads = num_heads
+        self.rope = rope
 
-    def forward(self, x: Float[torch.Tensor, "... seq_len d_model"]) -> Float[torch.Tensor, "... seq_len d_model"]:
+    def forward(
+        self,
+        x: Float[torch.Tensor, "... seq_len d_model"],
+        token_positions: Int[torch.Tensor, " ... seq_len"] | None = None,
+    ) -> Float[torch.Tensor, "... seq_len d_model"]:
         q = rearrange(self.q_proj(x), "... seq_len (h d_k) -> ... h seq_len d_k", h=self.num_heads)
         k = rearrange(self.k_proj(x), "... seq_len (h d_k) -> ... h seq_len d_k", h=self.num_heads)
+        if token_positions is not None:
+            assert self.rope is not None, "MultiheadSelfAttention实例化时需要传入rope参数"
+            q = self.rope(q, token_positions)
+            k = self.rope(k, token_positions)
         v = rearrange(self.v_proj(x), "... seq_len (h d_v) -> ... h seq_len d_v", h=self.num_heads)
         seq_len = x.shape[-2]
         mask = torch.tril(torch.ones(seq_len, seq_len, dtype=torch.bool))
